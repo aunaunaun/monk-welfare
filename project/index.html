@@ -856,7 +856,7 @@ function setLoading(tbodyId, cols, msg='กำลังโหลด...'){
 }
 
 // =====================================================
-// AUTH
+// AUTH — ใช้ profiles table โดยตรง (ไม่ผ่าน Supabase Auth)
 // =====================================================
 async function doLogin(){
   const email=g('login-email').value.trim();
@@ -866,15 +866,22 @@ async function doLogin(){
   btn.innerHTML='<span class="loading-spinner"></span>กำลังตรวจสอบ...'; btn.disabled=true;
   const errEl=g('login-err'); if(errEl) errEl.style.display='none';
   try{
-    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+    // ดึง profile จาก email + password โดยตรง
+    const { data, error } = await sb
+      .from('profiles')
+      .select('*')
+      .eq('email', email)
+      .eq('password', pass)
+      .eq('is_active', true)
+      .maybeSingle();
     if(error) throw error;
-    const { data: profile } = await sb.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
+    if(!data) throw new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
     const u = {
-      id       : data.user.id,
-      email    : data.user.email,
-      name     : profile?.full_name || data.user.email,
-      role     : profile?.role || 'admin',
-      district : profile?.district || ''
+      id       : data.id,
+      email    : data.email,
+      name     : data.full_name || data.email,
+      role     : data.role || 'admin',
+      district : data.district || ''
     };
     sessionSave(u);
     APP.user = u;
@@ -892,8 +899,7 @@ function loginOK(u){
   toast('ยินดีต้อนรับ '+u.name+' 🙏','success');
   if(u.role==='superadmin') confetti({particleCount:100,spread:70,origin:{y:.6},colors:['#FFD700','#FF8C00','#800000','#FFF']});
 }
-async function doLogout(){
-  await sb.auth.signOut();
+function doLogout(){
   sessionClear(); APP.user=null;
   location.reload();
 }
