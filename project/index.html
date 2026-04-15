@@ -1761,27 +1761,23 @@ async function addUser(){
   const name=v('u-name'),email=v('u-email'),pass=v('u-pass'),role=v('u-role'),district=v('u-dist');
   if(!name||!email||!pass){ toast('กรุณากรอกข้อมูลให้ครบ','warning'); return; }
   try{
-    // สร้าง user ใน Auth ก่อน
-    const { data, error } = await sb.auth.admin ? 
-      await sb.auth.admin.createUser({email,password:pass,email_confirm:true}) :
-      { data:null, error:{message:'ต้องใช้ service role key สำหรับสร้างผู้ใช้'} };
-    if(error) throw new Error(error.message);
-    // สร้าง/อัพเดต profile
-    await sbInsert('profiles',{id:data.user.id,email,full_name:name,role,district});
-    toast('เพิ่มผู้ใช้ '+name+' สำเร็จ','success');
+    // บันทึกตรงใน profiles table (ไม่ผ่าน Auth)
+    await sbInsert('profiles',{email,password:pass,full_name:name,role,district,is_active:true});
+    toast('เพิ่มผู้ใช้ '+name+' สำเร็จ ✅','success');
     ['u-name','u-email','u-pass'].forEach(id=>g(id).value='');
     await loadAndRenderUsers();
   } catch(e){ 
-    // Fallback: บันทึกใน profiles ตรงๆ ถ้า auth ไม่ได้
-    toast('ไม่สามารถสร้างผู้ใช้ผ่าน Auth ได้ (ต้องใช้ Supabase Dashboard): '+e.message,'warning');
+    toast('เพิ่มผู้ใช้ไม่สำเร็จ: '+e.message,'error');
   }
 }
 function openEditUser(id){ const u=APP.users.find(x=>String(x.id)===String(id)); if(!u) return; g('eu-id').value=u.id; g('eu-name').value=u.full_name||''; g('eu-email').value=u.email||''; g('eu-pass').value=''; g('eu-role').value=u.role||'admin'; g('eu-dist').value=u.district||''; g('edit-user-modal').style.display='flex'; }
 async function saveEditUser(){
-  const id=v('eu-id'),name=v('eu-name'),role=v('eu-role'),district=v('eu-dist');
+  const id=v('eu-id'),name=v('eu-name'),pass=v('eu-pass'),role=v('eu-role'),district=v('eu-dist');
   if(!name){ toast('กรุณากรอกชื่อ','warning'); return; }
   try{
-    await sbUpdate('profiles',id,{full_name:name,role,district});
+    const data = {full_name:name,role,district};
+    if(pass && pass.trim()) data.password = pass; // อัพเดตรหัสผ่านถ้ากรอก
+    await sbUpdate('profiles',id,data);
     closeModal('edit-user-modal'); await loadAndRenderUsers(); toast('แก้ไขสำเร็จ ✨','success');
   } catch(e){ toast('แก้ไขไม่สำเร็จ: '+e.message,'error'); }
 }
