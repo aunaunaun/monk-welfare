@@ -1536,7 +1536,7 @@ tbody td{padding:8px 10px;font-size:12px;word-break:break-word}
 
 <script>
 // ===== SUPABASE CONFIG =====
-const SUPABASE_URL = 'https://trbtwgkonbpbkpwiydiy.supabase.co';
+const SUPABASE_URL = 'https://trbtwgkonbpbkpwiydiy.supabase.co/functions/v1/monk-welfare';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRyYnR3Z2tvbmJwYmtwd2l5ZGl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyMzU1NDYsImV4cCI6MjA5MTgxMTU0Nn0.pYaC2Ru3YB5WwaNhDY3NpazWfWCBVLusBIDtRFbTco8';
 
 // Initialize Supabase client
@@ -1570,8 +1570,15 @@ function doLogin(){
   gasPost('login',{email,password:pass}).then(r=>{
     btn.innerHTML='🔐 เข้าสู่ระบบ'; btn.disabled=false;
     if(r&&r.success&&r.user) loginOK(r.user);
-    else toast(r?.message||'อีเมลหรือรหัสผ่านไม่ถูกต้อง','error');
-  }).catch(()=>{ btn.innerHTML='🔐 เข้าสู่ระบบ'; btn.disabled=false; toast('เชื่อมต่อ Backend ไม่ได้','error'); });
+    else {
+      console.error('Login failed:', r);
+      toast(r?.message||'อีเมลหรือรหัสผ่านไม่ถูกต้อง (ตรวจสอบว่าสมัครสมาชิกแล้วหรือยัง)','error');
+    }
+  }).catch((e)=>{ 
+    btn.innerHTML='🔐 เข้าสู่ระบบ'; btn.disabled=false; 
+    console.error('Login error:', e);
+    toast('เชื่อมต่อ Backend ไม่ได้: '+(e?.message||''),'error'); 
+  });
 }
 function loginOK(u){
   APP.user=u; sessionSave(u);
@@ -4021,10 +4028,20 @@ function mapWelfareData(d){
   };
 }
 async function sbLogin(creds){
+  console.log('sbLogin: attempting login for', creds.email);
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email: creds.email, password: creds.password });
-  if(error) return { success: false, message: error.message };
-  const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', data.user.id).single();
-  return { success: true, user: { id: data.user.id, email: data.user.email, name: profile?.full_name||data.user.email, role: profile?.role||'admin', district: profile?.district } };
+  if(error) {
+    console.error('sbLogin error:', error);
+    return { success: false, message: error.message };
+  }
+  console.log('sbLogin: auth success, user id:', data.user.id);
+  const { data: profile, error: profileError } = await supabaseClient.from('profiles').select('*').eq('id', data.user.id).single();
+  if(profileError) {
+    console.error('sbLogin profile error:', profileError);
+    // ถ้าไม่มี profile ให้สร้างใหม่หรือใช้ค่าเริ่มต้น
+    return { success: true, user: { id: data.user.id, email: data.user.email, name: data.user.email, role: 'user', district: '' } };
+  }
+  return { success: true, user: { id: data.user.id, email: data.user.email, name: profile?.full_name||data.user.email, role: profile?.role||'user', district: profile?.district } };
 }
 async function sbSearchMembers(q){
   const { data, error } = await supabaseClient.rpc('search_members', { search_query: q });
