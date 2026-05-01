@@ -977,12 +977,38 @@ function setRecTab(tab){
 // SUPABASE CRUD HELPERS
 // =====================================================
 async function sbSelect(table, filters={}, opts={}){
+  console.log('sbSelect called with:', {table, filters, opts});
   let q = sb.from(table).select('*');
-  Object.entries(filters).forEach(([k,v])=>{ if(v!==''&&v!==null&&v!==undefined) q=q.eq(k,v); });
-  if(opts.order) q=q.order(opts.order, {ascending: opts.asc!==false});
+  Object.entries(filters).forEach(([k,v])=>{ 
+    if(v!==''&&v!==null&&v!==undefined) {
+      console.log('Adding filter:', k, '=', v);
+      q=q.eq(k,v); 
+    }
+  });
+  if(opts.order) {
+    console.log('Adding order:', opts.order, 'asc:', opts.asc!==false);
+    q=q.order(opts.order, {ascending: opts.asc!==false});
+  }
   const { data, error } = await q;
-  if(error) throw error;
+  console.log('sbSelect result for', table, ':', {data, error});
+  if(error) {
+    console.error('Database error:', error);
+    throw error;
+  }
   return data||[];
+}
+
+// Test database connection
+async function testDatabaseConnection(){
+  try{
+    console.log('Testing database connection...');
+    const result = await sb.from('members').select('count', { count: 'exact' });
+    console.log('Database connection test result:', result);
+    return result;
+  } catch(e){
+    console.error('Database connection test failed:', e);
+    throw e;
+  }
 }
 async function sbInsert(table, obj){
   const { data, error } = await sb.from(table).insert([obj]).select().single();
@@ -1253,12 +1279,55 @@ async function loadAndRenderRec(){
   const thead=g('rec-thead');
   if(thead) thead.innerHTML='<tr><th>#</th><th>เลขสมาชิก</th><th>ประเภท</th><th>รูปถ่าย</th><th>วันที่</th>'+(isSA?'<th>อำเภอ</th>':'')+'<th>วัด</th><th>ชื่อ-ฉายา</th><th>โทร</th><th>ธนาคาร/บัญชี</th><th>การจัดการ</th></tr>';
   const h2=g('rec-title'); if(h2) h2.textContent=isSA?'📂 ทะเบียนรายชื่อ':'📂 ทะเบียนรายชื่อ — อ.'+(u.district||'');
+  
+  // Debug: Check if user is available
+  if(!u){
+    console.error('No user found in APP');
+    toast('ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่','error');
+    return;
+  }
+  
+  console.log('Loading records for user:', u.role, u.district);
+  
   try{
+    // Test database connection first
+    await testDatabaseConnection();
+    
     const filter = isSA ? {} : { district: u.district||'' };
+    console.log('Using filter:', filter);
+    
+    // Try to fetch from database
     const rows=await sbSelect('members', filter, {order:'created_at',asc:false});
+    console.log('Raw data from database:', rows);
+    
+    if(!rows || rows.length === 0){
+      console.log('No records found in database');
+      APP.records=[];
+      renderRec();
+      return;
+    }
+    
+    // Check if rows have expected structure
+    if(rows.length > 0 && !rows[0].hasOwnProperty('member_id') && !rows[0].hasOwnProperty('id')){
+      console.error('Database rows do not have expected structure:', rows[0]);
+      toast('โครงสร้างข้อมูลไม่ถูกต้อง','error');
+      APP.records=[];
+      renderRec();
+      return;
+    }
+    
     APP.records=rows.map(dbToMember);
+    console.log('Processed records:', APP.records);
+    
     renderRec();
-  } catch(e){ toast('โหลดข้อมูลไม่สำเร็จ: '+e.message,'error'); }
+  } catch(e){
+    console.error('Error loading records:', e);
+    toast('โหลดข้อมูลไม่สำเร็จ: '+e.message,'error');
+    
+    // Fallback: Show empty state
+    APP.records=[];
+    renderRec();
+  }
 }
 function renderRec(){
   const u=APP.user; let recs=[...APP.records];
@@ -1876,11 +1945,85 @@ function _doPrintPDF(bodyHtml,title,orientation){
 // IMAGE HELPERS
 // =====================================================
 function handleImgUrl(input,pvId,hidId){
-  const url=input.value.trim(); const pv=g(pvId); const hid=g(hidId);
+  let url=input.value.trim(); const pv=g(pvId); const hid=g(hidId);
   if(!url){ if(pv) pv.innerHTML='<span style="font-size:22px;">📷</span>'; if(hid) hid.value=''; return; }
+  
+  // Convert various hosting links to direct image URLs
+  
+  // Google Drive links
+  if(url.includes('drive.google.com/file/d/')){
+    const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if(match && match[1]){
+      url = 'https://lh3.googleusercontent.com/d/' + match[1];
+    }
+  } else if(url.includes('drive.google.com/open?id=')){
+    const match = url.match(/id=([a-zA-Z0-9_-]+)/);
+    if(match && match[1]){
+      url = 'https://lh3.googleusercontent.com/d/' + match[1];
+    }
+  }
+  
+  // Imgur links - convert to direct image
+  if(url.includes('imgur.com/')){
+    // Remove album/view parameters and get direct image
+    if(url.includes('/a/') || url.includes('/gallery/')){
+      // For albums/galleries, keep as is (can't convert to single image)
+    } else {
+      const match = url.match(/imgur\.com\/([a-zA-Z0-9]+)/);
+      if(match && match[1]){
+        url = 'https://i.imgur.com/' + match[1] + '.jpg';
+      }
+    }
+  }
+  
+  // GitHub raw image links
+  if(url.includes('github.com') && !url.includes('raw.githubusercontent.com')){
+    const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+\/.+)/);
+    if(match && match[1] && match[2] && match[3]){
+      url = 'https://raw.githubusercontent.com/' + match[1] + '/' + match[2] + '/' + match[3];
+    }
+  }
+  
+  // Discord CDN links - already direct, but ensure proper format
+  if(url.includes('discord.com') && url.includes('/attachments/')){
+    // Discord links are already direct, keep as is
+  }
+  
+  // Facebook image links
+  if(url.includes('facebook.com') && url.includes('/photo/')){
+    const match = url.match(/facebook\.com\/[^\/]+\/photos\/[^\/]+\/(\d+)/);
+    if(match && match[1]){
+      // Facebook requires authentication, so we'll keep original but add warning
+    }
+  }
+  
+  // Instagram links - can't convert to direct image easily
+  if(url.includes('instagram.com/p/')){
+    // Keep as is, will show as link not image
+  }
+  
+  // Flickr links
+  if(url.includes('flickr.com/photos/')){
+    const match = url.match(/flickr\.com\/photos\/[^\/]+\/(\d+)/);
+    if(match && match[1]){
+      url = 'https://live.staticflickr.com/' + Math.floor(Math.random() * 9999) + '/' + match[1] + '_b.jpg';
+    }
+  }
+  
+  // Update input field with converted URL
+  input.value = url;
   if(hid) hid.value=url;
-  const isImg=url.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i)||url.includes('googleusercontent')||url.includes('imgur');
-  if(pv){ if(isImg) pv.innerHTML='<img src="'+url+'" style="max-height:72px;max-width:160px;border-radius:8px;object-fit:cover;" onerror="this.outerHTML=\'<span style=color:#dc2626;font-size:12px>❌ โหลดไม่ได้</span>\'">'; else pv.innerHTML='<span style="font-size:22px;">📄</span><span style="color:#16a34a;font-size:12px;"> ✅ ลิงก์</span>'; }
+  
+  // Check if it's a direct image URL
+  const isImg=url.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i)||url.includes('googleusercontent')||url.includes('imgur')||url.includes('discord.com/attachments/')||url.includes('raw.githubusercontent.com')||url.includes('staticflickr.com');
+  
+  if(pv){ 
+    if(isImg) {
+      pv.innerHTML='<img src="'+url+'" style="max-height:72px;max-width:160px;border-radius:8px;object-fit:cover;" onerror="this.outerHTML=\'<span style=color:#dc2626;font-size:12px>❌ โหลดไม่ได้</span>\'">';
+    } else {
+      pv.innerHTML='<span style="font-size:22px;">📄</span><span style="color:#16a34a;font-size:12px;"> ✅ ลิงก์</span>';
+    }
+  }
 }
 function imgPreview(src){ g('img-modal-src').src=src; g('img-modal').style.display='flex'; }
 function thumb(url){ if(!url) return '<span style="color:#ccc;font-size:12px;">-</span>'; return '<img src="'+url+'" class="thumb-img" onclick="imgPreview(\''+url.replace(/'/g,'')+'\')" onerror="this.outerHTML=\'<span style=color:#ccc;font-size:11px>-</span>\'" loading="lazy">'; }
