@@ -394,7 +394,7 @@ tbody td{padding:8px 10px;font-size:12px;word-break:break-word}
           </div>
           <div class="flex flex-wrap items-center gap-3 mb-3">
             <h2 style="font-family:'Kanit',sans-serif;color:#800000;font-size:17px;font-weight:700;flex:1;" id="rec-title">📂 ทะเบียนรายชื่อ</h2>
-            <select id="filter-dist" class="form-input" style="width:auto;min-width:150px;display:none;" onchange="renderRec()"><option value="">ทุกอำเภอ</option><option>เมืองระยอง</option><option>บ้านฉาง</option><option>แกลง</option><option>วังจันทร์</option><option>บ้านค่าย</option><option>ปลวกแดง</option><option>เขาชะเมา</option><option>นิคมพัฒนา</option></select>
+            <select id="filter-dist" class="form-input" style="width:auto;min-width:150px;" onchange="renderRec()"><option value="">ทุกอำเภอ</option><option>เมืองระยอง</option><option>บ้านฉาง</option><option>แกลง</option><option>วังจันทร์</option><option>บ้านค่าย</option><option>ปลวกแดง</option><option>เขาชะเมา</option><option>นิคมพัฒนา</option></select>
             <input type="text" id="search-rec" class="form-input" placeholder="🔍 ค้นหา..." style="width:170px;" oninput="renderRec()">
             <button onclick="exportCSV()" class="btn-primary btn-success btn-sm">📥 CSV</button>
           </div>
@@ -1275,15 +1275,15 @@ async function loadAndRenderRec(){
   setLoading('rec-tbody',11);
   const u=APP.user; const isSA=u.role==='superadmin';
   const filterEl=g('filter-dist');
-  if(isSA) {
-    filterEl.style.display='block';
-    // Ensure first option is selected by default for superadmin
+  
+  // Show district dropdown for all users
+  filterEl.style.display='block';
+  
+  // Set default district for admin users
+  if(!isSA && u.district) {
     if(!filterEl.value || filterEl.value === '') {
-      filterEl.value = '';
+      filterEl.value = u.district;
     }
-  } else { 
-    filterEl.style.display='none'; 
-    filterEl.value=''; 
   }
   const thead=g('rec-thead');
   if(thead) thead.innerHTML='<tr><th>#</th><th>เลขสมาชิก</th><th>ประเภท</th><th>รูปถ่าย</th><th>วันที่</th>'+(isSA?'<th>อำเภอ</th>':'')+'<th>วัด</th><th>ชื่อ-ฉายา</th><th>โทร</th><th>ธนาคาร/บัญชี</th><th>การจัดการ</th></tr>';
@@ -1346,22 +1346,43 @@ function renderRec(){
   let recs=[...APP.records];
   let allRecs=[...APP.records];
   
-  // Apply filtering based on user role
+  // Get selected district from dropdown
+  const selectedDistrict = g('filter-dist').value;
+  console.log('Selected district:', selectedDistrict);
+  
+  // Apply filtering based on user role and selected district
   if(u.role==='admin') {
+    // Admin users can only see their own district, but dropdown should show their district
     recs=recs.filter(r=>r.district===u.district);
     allRecs=allRecs.filter(r=>r.district===u.district);
     console.log('Admin filter applied for district:', u.district);
   } else if(u.role==='superadmin') {
-    const df=g('filter-dist').value;
-    console.log('Superadmin district filter value:', df);
+    console.log('Superadmin district filter value:', selectedDistrict);
     
-    if(df && df.trim() !== '') {
-      recs=recs.filter(r=>r.district===df);
-      allRecs=allRecs.filter(r=>r.district===df);
-      console.log('Superadmin filter applied for district:', df);
+    if(selectedDistrict && selectedDistrict.trim() !== '') {
+      recs=recs.filter(r=>r.district===selectedDistrict);
+      allRecs=allRecs.filter(r=>r.district===selectedDistrict);
+      console.log('Superadmin filter applied for district:', selectedDistrict);
     } else {
       console.log('Superadmin showing all districts');
       // Show all records for superadmin when no district filter is selected
+    }
+  } else {
+    // For other user types, apply district filter if selected
+    if(selectedDistrict && selectedDistrict.trim() !== '') {
+      recs=recs.filter(r=>r.district===selectedDistrict);
+      allRecs=allRecs.filter(r=>r.district===selectedDistrict);
+      console.log('District filter applied for:', selectedDistrict);
+    }
+  }
+  
+  // Update title to show selected district
+  const h2=g('rec-title'); 
+  if(h2) {
+    if(selectedDistrict && selectedDistrict.trim() !== '') {
+      h2.textContent='📂 ทะเบียนรายชื่อ — อำเภอ '+selectedDistrict;
+    } else {
+      h2.textContent='📂 ทะเบียนรายชื่อ';
     }
   }
   
