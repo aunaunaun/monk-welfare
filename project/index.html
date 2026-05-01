@@ -403,6 +403,28 @@ tbody td{padding:8px 10px;font-size:12px;word-break:break-word}
             <button onclick="setRecTab('new')" id="rtab-new" class="rec-tab btn-primary btn-blue btn-sm">🆕 สมาชิกใหม่</button>
             <button onclick="setRecTab('renew')" id="rtab-renew" class="rec-tab btn-primary btn-sm" style="background:linear-gradient(135deg,#b45309,#d97706)!important;">🔄 ต่ออายุ</button>
           </div>
+          
+          <!-- District Summary Table -->
+          <div class="card p-4 mb-4" id="district-summary-card">
+            <h3 style="font-family:'Kanit',sans-serif;color:#800000;font-weight:600;margin-bottom:12px;">📊 สรุปรายการตามอำเภอ</h3>
+            <div class="overflow-x-auto">
+              <table id="district-summary-table">
+                <thead>
+                  <tr>
+                    <th style="background:#800000;color:#FFD700;padding:8px 10px;text-align:left;font-family:'Kanit',sans-serif;font-size:12px;">อำเภอ</th>
+                    <th style="background:#800000;color:#FFD700;padding:8px 10px;text-align:center;font-family:'Kanit',sans-serif;font-size:12px;">สมาชิกใหม่</th>
+                    <th style="background:#800000;color:#FFD700;padding:8px 10px;text-align:center;font-family:'Kanit',sans-serif;font-size:12px;">ต่ออายุ</th>
+                    <th style="background:#800000;color:#FFD700;padding:8px 10px;text-align:center;font-family:'Kanit',sans-serif;font-size:12px;">รวมทั้งหมด</th>
+                    <th style="background:#800000;color:#FFD700;padding:8px 10px;text-align:center;font-family:'Kanit',sans-serif;font-size:12px;">%</th>
+                  </tr>
+                </thead>
+                <tbody id="district-summary-tbody">
+                  <tr><td colspan="5" class="text-center py-4" style="color:#8B5E3C;">กำลังโหลดข้อมูล...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
           <div class="overflow-x-auto"><table><thead id="rec-thead"><tr></tr></thead><tbody id="rec-tbody"><tr><td colspan="11" class="text-center py-6" style="color:#8B5E3C;">ยังไม่มีข้อมูล</td></tr></tbody></table></div>
           <div class="mt-3" style="color:#8B5E3C;font-size:13px;"><span id="rec-count">แสดง 0 รายการ</span></div>
         </div>
@@ -1410,6 +1432,10 @@ function renderRec(){
   g('rec-total-count').textContent=allRecs.length;
   g('rec-new-count').textContent=allRecs.filter(r=>r.memberType==='new'||!r.memberType).length;
   g('rec-renew-count').textContent=allRecs.filter(r=>r.memberType==='renew').length;
+  
+  // Render district summary table
+  renderDistrictSummary(allRecs);
+
   const isSA=u.role==='superadmin';
   const tb=g('rec-tbody');
   if(!recs.length){ tb.innerHTML='<tr><td colspan="11" class="text-center py-6" style="color:#8B5E3C;">ไม่พบข้อมูล</td></tr>'; g('rec-count').textContent='แสดง 0 รายการ'; return; }
@@ -1433,6 +1459,58 @@ function renderRec(){
       +'</tr>';
   }).join('');
   g('rec-count').textContent='แสดง '+recs.length+' รายการ (ทั้งหมด: '+allRecs.length+')';
+}
+
+// District Summary Function
+function renderDistrictSummary(records){
+  const districts = ['เมืองระยอง', 'บ้านฉาง', 'แกลง', 'วังจันทร์', 'บ้านค่าย', 'ปลวกแดง', 'เขาชะเมา', 'นิคมพัฒนา'];
+  
+  const districtStats = {};
+  let totalNew = 0;
+  let totalRenew = 0;
+  
+  // Calculate statistics for each district
+  districts.forEach(district => {
+    const districtRecords = records.filter(r => r.district === district);
+    const newCount = districtRecords.filter(r => r.memberType === 'new' || !r.memberType).length;
+    const renewCount = districtRecords.filter(r => r.memberType === 'renew').length;
+    const totalCount = districtRecords.length;
+    
+    totalNew += newCount;
+    totalRenew += renewCount;
+    
+    districtStats[district] = {
+      new: newCount,
+      renew: renewCount,
+      total: totalCount,
+      percentage: totalCount > 0 ? ((totalCount / records.length) * 100).toFixed(1) : 0
+    };
+  });
+  
+  // Render district summary table
+  const tbody = g('district-summary-tbody');
+  if (!tbody) return;
+  
+  tbody.innerHTML = districts.map(district => {
+    const stats = districtStats[district];
+    const percentage = stats.percentage > 0 ? 
+      `<span style="color:#16a34a;font-weight:600;">${stats.percentage}%</span>` : 
+      '<span style="color:#8B5E3C;">0%</span>';
+    
+    return `
+      <tr>
+        <td style="padding:8px 10px;font-weight:600;color:#800000;">${district}</td>
+        <td style="padding:8px 10px;text-align:center;">
+          <span class="badge badge-new" style="padding:4px 8px;">${stats.new}</span>
+        </td>
+        <td style="padding:8px 10px;text-align:center;">
+          <span class="badge badge-renew" style="padding:4px 8px;">${stats.renew}</span>
+        </td>
+        <td style="padding:8px 10px;text-align:center;font-weight:600;color:#800000;">${stats.total}</td>
+        <td style="padding:8px 10px;text-align:center;">${percentage}</td>
+      </tr>
+    `;
+  }).join('');
 }
 function canEdit(r){ const u=APP.user; if(!u) return false; return u.role==='superadmin'||(u.role==='admin'&&r.district===u.district); }
 function openEdit(id){
